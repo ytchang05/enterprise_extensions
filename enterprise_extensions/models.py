@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import functools
+import inspect
 from collections import OrderedDict
 
 import numpy as np
@@ -18,347 +19,282 @@ from enterprise_extensions.blocks import (bwm_block, bwm_sglpsr_block,
                                           common_red_noise_block,
                                           dm_noise_block, red_noise_block,
                                           white_noise_block)
+from enterprise_extensions.chromatic import (dmx_signal, dm_annual_signal,
+                                             dm_exponential_dip,
+                                             dm_exponential_cusp,
+                                             dm_dual_exp_cusp)
 from enterprise_extensions.chromatic.solar_wind import solar_wind_block
 from enterprise_extensions.timing import timing_block
 
 # from enterprise.signals.signal_base import LookupLikelihood
 
 
-def model_singlepsr_noise(psr, tm_var=False, tm_linear=False,
-                          tmparam_list=None,
-                          red_var=True, psd='powerlaw', red_select=None,
-                          noisedict=None, tm_svd=False, tm_norm=True,
-                          white_vary=True, components=30, upper_limit=False,
-                          is_wideband=False, use_dmdata=False, tnequad=False,
-                          dmjump_var=False, gamma_val=None, dm_var=False,
-                          dm_type='gp', dmgp_kernel='diag', dm_psd='powerlaw',
-                          dm_nondiag_kernel='periodic', dmx_data=None,
-                          dm_annual=False, gamma_dm_val=None,
-                          dm_dt=15, dm_df=200, dm_Nfreqs=30,
-                          chrom_Nfreqs=30, chrom_gp=False, chrom_gp_kernel='nondiag',
-                          chrom_psd='powerlaw', chrom_idx=4, chrom_quad=False,
-                          chrom_kernel='periodic',
-                          chrom_dt=15, chrom_df=200,
-                          dm_expdip=False, dmexp_sign='negative',
-                          dm_expdip_idx=2,
-                          dm_expdip_tmin=None, dm_expdip_tmax=None,
-                          num_dmdips=1, dmdip_seqname=None,
-                          dm_cusp=False, dm_cusp_sign='negative',
-                          dm_cusp_idx=2, dm_cusp_sym=False,
-                          dm_cusp_tmin=None, dm_cusp_tmax=None,
-                          num_dm_cusps=1, dm_cusp_seqname=None,
-                          dm_dual_cusp=False, dm_dual_cusp_tmin=None,
-                          dm_dual_cusp_tmax=None, dm_dual_cusp_sym=False,
-                          dm_dual_cusp_idx1=2, dm_dual_cusp_idx2=4,
-                          dm_dual_cusp_sign='negative', num_dm_dual_cusps=1,
-                          dm_dual_cusp_seqname=None,
-                          dm_sw_deter=False, dm_sw_gp=False,
-                          swgp_prior=None, swgp_basis=None,
-                          coefficients=False, extra_sigs=None,
-                          psr_model=False, factorized_like=False,
-                          Tspan=None, fact_like_gamma=13./3, gw_components=10,
-                          fact_like_logmin=None, fact_like_logmax=None,
-                          select='backend', tm_marg=False, dense_like=False, ng_twg_setup=False, wb_efac_sigma=0.25,
-                          vary_dm=True, vary_chrom=True):
+def model_singlepsr_noise(psr, psr_model=False,
+                          is_wideband=False, use_dmdata=False,
+                          extra_sigs=None, dense_like=False,
+                          noise_dict=None, shared=None,
+                          tm=None, white_noise=None,
+                          fact_like=None, red_noise=None,
+                          dm=None, sw=None, chrom=None):
+
     """
     Single pulsar noise model.
 
+    This function is set up so all noise block kwargs are optional; specify
+    only the kwargs necessary, as unprovided kwargs will use a given noise
+    block's defaults. There is also maximum flexibility in providing
+    higher-level kwarg defaults that can be overridden by lower-level kwargs.
+
     :param psr: enterprise pulsar object
-    :param tm_var: explicitly vary the timing model parameters
-    :param tm_linear: vary the timing model in the linear approximation
-    :param tmparam_list: an explicit list of timing model parameters to vary
-    :param red_var: include red noise in the model
-    :param psd: red noise psd model
-    :param noisedict: dictionary of noise parameters
-    :param tm_svd: boolean for svd-stabilised timing model design matrix
-    :param tm_norm: normalize the timing model, or provide custom normalization
-    :param white_vary: boolean for varying white noise or keeping fixed
-    :param components: number of modes in Fourier domain processes
-    :param dm_components: number of modes in Fourier domain DM processes
-    :param upper_limit: whether to do an upper-limit analysis
-    :param is_wideband: whether input TOAs are wideband TOAs; will exclude
-           ecorr from the white noise model
-    :param use_dmdata: whether to use DM data (WidebandTimingModel) if
-           is_wideband
-    :param gamma_val: red noise spectral index to fix
-    :param dm_var: whether to explicitly model DM-variations
-    :param dm_type: gaussian process ('gp') or dmx ('dmx')
-    :param dmgp_kernel: diagonal in frequency or non-diagonal
-    :param dm_psd: power-spectral density of DM variations
-    :param dm_nondiag_kernel: type of time-domain DM GP kernel
-    :param dmx_data: supply the DMX data from par files
-    :param dm_annual: include an annual DM signal
-    :param gamma_dm_val: spectral index of power-law DM variations
-    :param dm_dt: time-scale for DM linear interpolation basis (days)
-    :param dm_df: frequency-scale for DM linear interpolation basis (MHz)
-    :param chrom_gp: include general chromatic noise
-    :param chrom_gp_kernel: GP kernel type to use in chrom ['diag','nondiag']
-    :param chrom_psd: power-spectral density of chromatic noise
-        ['powerlaw','tprocess','free_spectrum']
-    :param chrom_idx: frequency scaling of chromatic noise. use 'vary' to vary
-        between [2.5,5].
-    :param chrom_kernel: Type of 'nondiag' time-domain chrom GP kernel to use
-        ['periodic', 'sq_exp','periodic_rfband', 'sq_exp_rfband']
-    :param chrom_quad: Whether to add a quadratic chromatic term. Boolean
-    :param chrom_dt: time-scale for chromatic linear interpolation basis (days)
-    :param chrom_df: frequency-scale for chromatic linear interpolation basis (MHz)
-    :param dm_expdip: inclue a DM exponential dip
-    :param dmexp_sign: set the sign parameter for dip
-    :param dm_expdip_idx: chromatic index of exponential dip
-    :param dm_expdip_tmin: sampling minimum of DM dip epoch
-    :param dm_expdip_tmax: sampling maximum of DM dip epoch
-    :param num_dmdips: number of dm exponential dips
-    :param dmdip_seqname: name of dip sequence
-    :param dm_cusp: include a DM exponential cusp
-    :param dm_cusp_sign: set the sign parameter for cusp
-    :param dm_cusp_idx: chromatic index of exponential cusp
-    :param dm_cusp_tmin: sampling minimum of DM cusp epoch
-    :param dm_cusp_tmax: sampling maximum of DM cusp epoch
-    :param dm_cusp_sym: make exponential cusp symmetric
-    :param num_dm_cusps: number of dm exponential cusps
-    :param dm_cusp_seqname: name of cusp sequence
-    :param dm_dual_cusp: include a DM cusp with two chromatic indices
-    :param dm_dual_cusp_tmin: sampling minimum of DM dual cusp epoch
-    :param dm_dual_cusp_tmax: sampling maximum of DM dual cusp epoch
-    :param dm_dual_cusp_idx1: first chromatic index of DM dual cusp
-    :param dm_dual_cusp_idx2: second chromatic index of DM dual cusp
-    :param dm_dual_cusp_sym: make dual cusp symmetric
-    :param dm_dual_cusp_sign: set the sign parameter for dual cusp
-    :param num_dm_dual_cusps: number of DM dual cusps
-    :param dm_dual_cusp_seqname: name of dual cusp sequence
-    :param dm_scattering: whether to explicitly model DM scattering variations
-    :param dm_sw_deter: use the deterministic solar wind model
-    :param dm_sw_gp: add a Gaussian process perturbation to the deterministic
-        solar wind model.
-    :param swgp_prior: prior is currently set automatically
-    :param swgp_basis: ['powerlaw', 'periodic', 'sq_exp']
-    :param coefficients: explicitly include latent coefficients in model
     :param psr_model: Return the enterprise model instantiated on the pulsar
         rather than an instantiated PTA object, i.e. model(psr) rather than
         PTA(model(psr)).
-    :param factorized_like: Whether to run a factorized likelihood analyis Boolean
-    :param gw_components: number of modes in Fourier domain for a common
-           process in a factorized likelihood calculation.
-    :param fact_like_gamma: fixed common process spectral index
-    :param fact_like_logmin: specify lower prior for common psd. This is a prior on log10_rho
-        if common_psd is 'spectrum', else it is a prior on log10 amplitude
-    :param fact_like_logmax: specify upper prior for common psd. This is a prior on log10_rho
-        if common_psd is 'spectrum', else it is a prior on log10 amplitude
-    :param Tspan: time baseline used to determine Fourier GP frequencies
+    :param is_wideband: whether input TOAs are wideband TOAs; will exclude
+       ecorr from the white noise model
+    :param use_dmdata: whether to use DM data (WidebandTimingModel) if
+           is_wideband
     :param extra_sigs: Any additional `enterprise` signals to be added to the
         model.
-    :param tm_marg: Use marginalized timing model. In many cases this will speed
-        up the likelihood calculation significantly.
     :param dense_like: Use dense or sparse functions to evalute lnlikelihood
-    :param vary_dm: Whether to vary the DM model or use constant values
-    :param vary_chrom: Whether to vary the chromatic model or use constant values
+    :param noise_dict: dictionary of noise parameters
+    :param shared: dictionary of any noise parameters that may be shared
+        between multiple noise blocks; any provided shared kwargs will be the
+        default in a given noise block (if used in the block) unless
+        overridden; examples include, but aren't limited to:
+        - coefficients: explicitly include latent coefficients in model
+        - components: number of modes in Fourier domain processes
+        - gamma_val: spectral index to fix
+        - logmin: specify lower prior for psd
+        - logmax: specify upper prior for psd
+        - prior: 'log-uniform' or 'uniform'
+        - psd: red noise psd model
+        - Tspan: time baseline used to determine Fourier GP frequencies
+    :param tm: dictionary of timing model kwargs; includes:
+        - toggle: vary the timing model parameters (default False)
+        - dmjump_var:
+        - linear: vary the timing model in the linear approximation
+        - marg: Use marginalized timing model. In many cases this will speed
+        up the likelihood calculation significantly.
+        - param_list: an explicit list of timing model parameters to vary
+        - svd: boolean for svd-stabilised timing model design matrix
+        - norm: normalize the timing model, or provide custom normalization
+    :param white_noise: dictionary of white noise kwargs; includes:
+        - toggle: vary the white noise parameters (default False)
+        - wb_efac_sigma
+        - ng_twg_setup
+    :param fact_like: dictionary of common red noise kwargs; includes:
+        - toggle: run a factorized likelihood analyis Boolean (default False)
+        - components: number of modes in Fourier domain for a common
+           process in a factorized likelihood calculation.
+    :param red_noise: dictionary of red noise kwargs; includes:
+        - toggle: include red noise in the model (default True)
+    :param dm: dictionary of DM noise kwargs; includes:
+        - vary: whether to vary the DM model or use constant values
+        - gp: dictionary of gaussian process DM noise kwargs; includes:
+            - toggle: include DMGP (default False)
+            - gp_kernel: GP kernel type to use, ['diag','nondiag']
+            - psd: power-spectral density of DM variations
+            - nondiag_kernel: type of time-domain DM GP kernel
+            - dt: time-scale for DM linear interpolation basis (days)
+            - df: frequency-scale for DM linear interpolation basis (MHz)
+            - gamma_val: spectral index of power-law DM variations
+        - dmx: dictionary of DMX noise kwargs; includes:
+            - toggle: include DMX (default False)
+            - dmx_data: supply the DMX data from par files
+        - annual: dictionary of annual DM noise kwargs; includes: "toggle"
+        - expdip, cusp, dual_cusp: dictionary of DM event noise kwargs; each
+            behaves the same, and includes:
+            - toggle: include DM event noise (default False)
+            - name: name of event sequence
+            - events: list of dictionaries of event kwargs; possible kwargs are
+                below, however any of these can also be specified at the same level
+                as the toggle above, to be the default for all events of this type:
+                - idx: chromatic index of DM event (for dual_cusp, idx1 and idx2)
+                - tmin: sampling minimum of DM event epoch
+                - tmax: sampling maximum of DM event epoch
+                - sign: set the sign parameter for event
+                - sym: make event symmetric (for cusp and dual_cusp)
+                - name: name of event
+    :param sw: dictionary of solar wind noise kwargs; includes:
+        - toggle: use the deterministic solar wind model (default False)
+        - include_swgp: add a Gaussian process perturbation to the deterministic
+        solar wind model (default False)
+        - swgp_prior: prior is currently set automatically
+        - swgp_basis: ['powerlaw', 'periodic', 'sq_exp']
+    :param chrom: dictionary of chromatic noise kwargs; includes:
+        - toggle: include general chromatic noise (default False)
+        - vary: whether to vary the chromatic model or use constant values
+        - gp_kernel: GP kernel type to use, ['diag','nondiag']
+        - psd: power-spectral density of chromatic noise
+            ['powerlaw','tprocess','free_spectrum']
+        - idx: frequency scaling of chromatic noise. use 'vary' to vary
+            between [2.5, 5]
+        - nondiag_kernel: type of 'nondiag' time-domain chrom GP kernel to use
+            ['periodic', 'sq_exp','periodic_rfband', 'sq_exp_rfband']
+        - include_quadratic: whether to add a quadratic chromatic term
+        - dt: time-scale for chromatic linear interpolation basis (days)
+        - df: frequency-scale for chromatic linear interpolation basis (MHz)
 
     :return s: single pulsar noise model
 
     """
-    amp_prior = 'uniform' if upper_limit else 'log-uniform'
+
+    # TODO: add **kwargs and convert old kwargs for backward compatibility
 
     # timing model
-    if not tm_var:
-        if (is_wideband and use_dmdata):
-            if dmjump_var:
+    tm_settings = {k: tm.pop(k, False) for k in ("dmjump_var", "linear", "marg")}
+    if not tm.get("toggle"):
+        if is_wideband and use_dmdata:
+
+            if tm_settings["dmjump_var"]:
                 dmjump = parameter.Uniform(pmin=-0.005, pmax=0.005)
             else:
                 dmjump = parameter.Constant()
-            if white_vary:
-                if ng_twg_setup:
-                    dmefac = parameter.Normal(1.0, wb_efac_sigma)
+
+            if white_noise.get("toggle"):
+                if white_noise.get("ng_twg_setup"):
+                    default_wb_efac_sigma = inspect.signature(white_noise_block).parameters["wb_efac_sigma"].default
+                    dmefac = parameter.Normal(1.0, white_noise.get("wb_efac_sigma", default_wb_efac_sigma))
                 else:
                     dmefac = parameter.Uniform(pmin=0.1, pmax=10.0)
                 log10_dmequad = parameter.Uniform(pmin=-7.0, pmax=0.0)
                 # dmjump = parameter.Uniform(pmin=-0.005, pmax=0.005)
+
             else:
                 dmefac = parameter.Constant()
                 log10_dmequad = parameter.Constant()
                 # dmjump = parameter.Constant()
+
             s = gp_signals.WidebandTimingModel(dmefac=dmefac,
                                                log10_dmequad=log10_dmequad, dmjump=dmjump,
-                                               selection=selections.Selection(
-                                                   selections.by_backend),
-                                               dmjump_selection=selections.Selection(
-                                                   selections.by_frontend))
+                                               selection=selections.Selection(selections.by_backend),
+                                               dmjump_selection=selections.Selection(selections.by_frontend))
+
         else:
-            if tm_marg:
-                s = gp_signals.MarginalizingTimingModel(use_svd=tm_svd)
+            if tm_settings["marg"]:
+                s = gp_signals.MarginalizingTimingModel(**tm)
             else:
-                s = gp_signals.TimingModel(use_svd=tm_svd, normed=tm_norm,
-                                           coefficients=coefficients)
+                default_coefficients = inspect.signature(gp_signals.TimingModel).parameters["coefficients"].default
+                tm["coefficients"] = shared.get("coefficients", default_coefficients)
+                s = gp_signals.TimingModel(**tm)
+
     else:
         # create new attribute for enterprise pulsar object
         psr.tmparams_orig = OrderedDict.fromkeys(psr.t2pulsar.pars())
         for key in psr.tmparams_orig:
             psr.tmparams_orig[key] = (psr.t2pulsar[key].val,
                                       psr.t2pulsar[key].err)
-        if not tm_linear:
-            s = timing_block(tmparam_list=tmparam_list)
+        if not tm_settings["linear"]:
+            s = timing_block(**tm)
         else:
-            pass
+            raise NotImplementedError("Linear timing model not implemented yet.")
 
-    # red noise and common process
-    if factorized_like:
-        if Tspan is None:
-            msg = 'Must Timespan to match amongst all pulsars when doing '
-            msg += 'a factorized likelihood analysis.'
-            raise ValueError(msg)
+    if fact_like.get("Tspan") is None:
+        raise ValueError("Must Timespan to match amongst all pulsars when doing " +
+                         "a factorized likelihood analysis.")
 
-        s += common_red_noise_block(psd=psd, prior=amp_prior,
-                                    Tspan=Tspan, components=gw_components,
-                                    gamma_val=fact_like_gamma, delta_val=None,
-                                    orf=None, name='gw',
-                                    coefficients=coefficients,
-                                    pshift=False, pseed=None,
-                                    logmin=fact_like_logmin, logmax=fact_like_logmax)
+    # default red noise toggle to true
+    if "toggle" not in red_noise:
+        print("Red noise toggle not specified, defaulting to True.")
+        red_noise["toggle"] = True
 
-    if red_var:
-        s += red_noise_block(psd=psd, prior=amp_prior, Tspan=Tspan,
-                             components=components, gamma_val=gamma_val,
-                             coefficients=coefficients, select=red_select)
+    # use dm_vary for all dm blocks unless overridden
+    if "vary" in dm:
+        for key in [k for k in dm if k != "vary"]:
+            dm[key]["vary"] = dm[key].get("vary", dm["vary"])
 
-    # DM variations
-    if dm_var:
-        if dm_type == 'gp':
-            if dmgp_kernel == 'diag':
-                s += dm_noise_block(gp_kernel=dmgp_kernel, psd=dm_psd,
-                                    prior=amp_prior, components=dm_Nfreqs,
-                                    gamma_val=gamma_dm_val, Tspan=Tspan,
-                                    coefficients=coefficients,
-                                    vary=vary_dm)
-            elif dmgp_kernel == 'nondiag':
-                s += dm_noise_block(gp_kernel=dmgp_kernel,
-                                    nondiag_kernel=dm_nondiag_kernel,
-                                    dt=dm_dt, df=dm_df,
-                                    coefficients=coefficients,
-                                    vary=vary_dm)
-        elif dm_type == 'dmx':
-            s += chrom.dmx_signal(dmx_data=dmx_data[psr.name],vary=vary_dm)
-        if dm_annual:
-            s += chrom.dm_annual_signal(vary=vary_dm)
+    # set dmx data for specific pulsar
+    if dm.get("dmx", {}).get("dmx_data"):
+        dm["dmx"]["dmx_data"] = dm["dmx"]["dmx_data"][psr.name]
 
-        if dm_expdip:
-            if dm_expdip_tmin is None and dm_expdip_tmax is None:
-                tmin = [psr.toas.min() / const.day for ii in range(num_dmdips)]
-                tmax = [psr.toas.max() / const.day for ii in range(num_dmdips)]
-            else:
-                tmin = (dm_expdip_tmin if isinstance(dm_expdip_tmin, list)
-                        else [dm_expdip_tmin])
-                tmax = (dm_expdip_tmax if isinstance(dm_expdip_tmax, list)
-                        else [dm_expdip_tmax])
-            if dmdip_seqname is not None:
-                dmdipname_base = (['dmexp_' + nm for nm in dmdip_seqname]
-                                  if isinstance(dmdip_seqname, list)
-                                  else ['dmexp_' + dmdip_seqname])
-            else:
-                dmdipname_base = ['dmexp_{0}'.format(ii+1)
-                                  for ii in range(num_dmdips)]
-
-            dm_expdip_idx = (dm_expdip_idx if isinstance(dm_expdip_idx, list)
-                             else [dm_expdip_idx])
-            for dd in range(num_dmdips):
-                s += chrom.dm_exponential_dip(tmin=tmin[dd], tmax=tmax[dd],
-                                              idx=dm_expdip_idx[dd],
-                                              sign=dmexp_sign,
-                                              name=dmdipname_base[dd],
-                                              vary=vary_dm)
-        if dm_cusp:
-            if dm_cusp_tmin is None and dm_cusp_tmax is None:
-                tmin = [psr.toas.min() / const.day for ii in range(num_dm_cusps)]
-                tmax = [psr.toas.max() / const.day for ii in range(num_dm_cusps)]
-            else:
-                tmin = (dm_cusp_tmin if isinstance(dm_cusp_tmin, list)
-                        else [dm_cusp_tmin])
-                tmax = (dm_cusp_tmax if isinstance(dm_cusp_tmax, list)
-                        else [dm_cusp_tmax])
-            if dm_cusp_seqname is not None:
-                cusp_name_base = 'dm_cusp_'+dm_cusp_seqname+'_'
-            else:
-                cusp_name_base = 'dm_cusp_'
-            dm_cusp_idx = (dm_cusp_idx if isinstance(dm_cusp_idx, list)
-                           else [dm_cusp_idx])
-            dm_cusp_sign = (dm_cusp_sign if isinstance(dm_cusp_sign, list)
-                            else [dm_cusp_sign])
-            for dd in range(1, num_dm_cusps+1):
-                s += chrom.dm_exponential_cusp(tmin=tmin[dd-1],
-                                               tmax=tmax[dd-1],
-                                               idx=dm_cusp_idx[dd-1],
-                                               sign=dm_cusp_sign[dd-1],
-                                               symmetric=dm_cusp_sym,
-                                               name=cusp_name_base+str(dd),
-                                               vary=vary_dm)
-        if dm_dual_cusp:
-            if dm_dual_cusp_tmin is None and dm_cusp_tmax is None:
-                tmin = psr.toas.min() / const.day
-                tmax = psr.toas.max() / const.day
-            else:
-                tmin = dm_dual_cusp_tmin
-                tmax = dm_dual_cusp_tmax
-            if dm_dual_cusp_seqname is not None:
-                dual_cusp_name_base = 'dm_dual_cusp_'+dm_cusp_seqname+'_'
-            else:
-                dual_cusp_name_base = 'dm_dual_cusp_'
-            for dd in range(1, num_dm_dual_cusps+1):
-                s += chrom.dm_dual_exp_cusp(tmin=tmin, tmax=tmax,
-                                            idx1=dm_dual_cusp_idx1,
-                                            idx2=dm_dual_cusp_idx2,
-                                            sign=dm_dual_cusp_sign,
-                                            symmetric=dm_dual_cusp_sym,
-                                            name=dual_cusp_name_base+str(dd),
-                                            vary=vary_dm)
-        if dm_sw_deter:
-            Tspan = psr.toas.max() - psr.toas.min()
-            s += solar_wind_block(ACE_prior=True, include_swgp=dm_sw_gp,
-                                  swgp_prior=swgp_prior, swgp_basis=swgp_basis,
-                                  Tspan=Tspan)
-            
-    if chrom_gp:
-        s += chromatic_noise_block(gp_kernel=chrom_gp_kernel,
-                                   psd=chrom_psd, idx=chrom_idx,
-                                   components=chrom_Nfreqs,
-                                   nondiag_kernel=chrom_kernel,
-                                   dt=chrom_dt, df=chrom_df,
-                                   include_quadratic=chrom_quad,
-                                   coefficients=coefficients,
-                                   Tspan=Tspan,
-                                   vary=vary_chrom)
-    if extra_sigs is not None:
-        s += extra_sigs
+    # override solar wind block defaults
+    sw["ACE_prior"] = sw.get("ACE_prior", True)
+    sw["include_gp"] = sw.get("include_gp", False)
 
     # adding white-noise, and acting on psr objects
     if ('NANOGrav' in psr.flags['pta'] or 'CHIME' in psr.flags['f']) and not is_wideband:
-        s2 = s + white_noise_block(vary=white_vary, inc_ecorr=True,
-                                   tnequad=tnequad, select=select)
-        model = s2(psr)
-        if psr_model:
-            Model = s2
-    else:
-        s3 = s + white_noise_block(vary=white_vary, inc_ecorr=False,
-                                   tnequad=tnequad, select=select, ng_twg_setup=ng_twg_setup, wb_efac_sigma=wb_efac_sigma)
-        model = s3(psr)
-        if psr_model:
-            Model = s3
+        white_noise["inc_ecorr"] = white_noise.get("inc_ecorr", True)
 
+    blocks = {
+        "white_noise": white_noise_block,
+        "fact_like": common_red_noise_block,
+        "red_noise": red_noise_block,
+        "dm.gp": dm_noise_block,
+        "dm.dmx": dmx_signal,
+        "dm.annual": dm_annual_signal,
+        "sw": solar_wind_block,
+        "chrom": chromatic_noise_block,
+    }
+
+    for name, block in blocks.items():
+
+        # get toggle and kwargs from arguments
+        block_kwargs = locals()[name] if not name.startswith("dm.") else dm[name[3:]]
+
+        if block_kwargs.pop("toggle", False):
+
+            # use shared_kwargs where applicable unless overridden
+            for key, value in shared.items():
+                if inspect.signature(block).parameters.get(key):
+                    block_kwargs[key] = block_kwargs.get(key, value)
+
+            # add noise block
+            s += block(**block_kwargs)
+
+    dm_event_blocks = {
+        "expdip": dm_exponential_dip,
+        "cusp": dm_exponential_cusp,
+        "dual_cusp": dm_dual_exp_cusp
+    }
+
+    for name, block in dm_event_blocks:
+
+        if dm[name].pop("toggle", False):
+
+            # enumerate events for naming purposes
+            for n, event_kwargs in enumerate(dm[name].get("events", [{}])):
+
+                # use shared kwargs where applicable unless overridden
+                for k, v in dm[name].items():
+                    if k in ("events", "name"):
+                        continue
+                    event_kwargs[k] = event_kwargs.get(k, v)
+
+                # use default tmin and tmax unless overridden
+                event_kwargs["tmin"] = event_kwargs.get("tmin", psr.toas.min() / const.day)
+                event_kwargs["tmax"] = event_kwargs.get("tmax", psr.toas.max() / const.day)
+
+                # format event name
+                event_kwargs["name"] = '_'.join([x for x in
+                                                 ["dm", name, dm[name].get('name'),
+                                                  (event_kwargs.get("name") or str(n+1))]
+                                                 if x])
+
+                # add noise block
+                s += block(**event_kwargs)
+
+    # extra signals
+    if extra_sigs is not None:
+        s += extra_sigs
+
+    # return enterprise model
     if psr_model:
-        return Model
+        return s
+
+    # set up PTA
+    model = s(psr)
+    if dense_like:
+        pta = signal_base.PTA([model], lnlikelihood=signal_base.LogLikelihoodDenseCholesky)
     else:
-        # set up PTA
-        if dense_like:
-            pta = signal_base.PTA([model], lnlikelihood=signal_base.LogLikelihoodDenseCholesky)
-        else:
-            pta = signal_base.PTA([model])
+        pta = signal_base.PTA([model])
 
-        # set white noise parameters
-        if not white_vary or (is_wideband and use_dmdata):
-            if noisedict is None:
-                print('No noise dictionary provided!...')
-            else:
-                noisedict = noisedict
-                pta.set_default_params(noisedict)
+    # set white noise parameters
+    if noise_dict is not None:
+        pta.set_default_params(noise_dict)
+    elif not white_noise or (is_wideband and use_dmdata):
+        print('No noise dictionary provided!...')
 
-        return pta
+    return pta
 
 
 def model_1(psrs, psd='powerlaw', noisedict=None, white_vary=False,
