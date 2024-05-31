@@ -10,7 +10,6 @@ from enterprise.signals import (deterministic_signals, gp_signals, parameter,
                                 selections, signal_base, white_signals)
 from enterprise.signals.signal_base import LogLikelihood
 
-from enterprise_extensions import chromatic as chrom
 from enterprise_extensions import deterministic
 from enterprise_extensions import dropout as do
 from enterprise_extensions import model_utils
@@ -814,7 +813,7 @@ def model_general(psrs, tm_var=False, tm_linear=False, tmparam_list=None,
                                 components=dm_components, gamma_val=None,
                                 coefficients=coefficients)
         if dm_annual:
-            s += chrom.dm_annual_signal()
+            s += dm_annual_signal()
         if dm_chrom:
             s += chromatic_noise_block(psd=dmchrom_psd, idx=dmchrom_idx,
                                        name='chromatic',
@@ -840,7 +839,7 @@ def model_general(psrs, tm_var=False, tm_linear=False, tmparam_list=None,
             if '1713' in p.name and dm_var:
                 tmin = p.toas.min() / const.day
                 tmax = p.toas.max() / const.day
-                s3 = s2 + chrom.dm_exponential_dip(tmin=tmin, tmax=tmax, idx=2,
+                s3 = s2 + dm_exponential_dip(tmin=tmin, tmax=tmax, idx=2,
                                                    sign=False, name='dmexp')
                 models.append(s3(p))
             else:
@@ -855,7 +854,7 @@ def model_general(psrs, tm_var=False, tm_linear=False, tmparam_list=None,
             if '1713' in p.name and dm_var:
                 tmin = p.toas.min() / const.day
                 tmax = p.toas.max() / const.day
-                s5 = s4 + chrom.dm_exponential_dip(tmin=tmin, tmax=tmax, idx=2,
+                s5 = s4 + dm_exponential_dip(tmin=tmin, tmax=tmax, idx=2,
                                                    sign=False, name='dmexp')
                 models.append(s5(p))
             else:
@@ -2312,10 +2311,10 @@ def model_bwm(psrs, likelihood=LogLikelihood, lookupdir=None, noisedict=None, tm
         s += dm_noise_block(psd=dm_psd, prior=amp_prior, components=components,
                             gamma_val=None)
         if dm_annual:
-            s += chrom.dm_annual_signal()
+            s += dm_annual_signal()
 
         # DM exponential dip for J1713's DM event
-        dmexp = chrom.dm_exponential_dip(tmin=54500, tmax=54900)
+        dmexp = dm_exponential_dip(tmin=54500, tmax=54900)
 
     # GW BWM signal block
     s += bwm_block(Tmin_bwm, Tmax_bwm, logmin=burst_logmin, logmax=burst_logmax,
@@ -2445,10 +2444,10 @@ def model_bwm_sglpsr(psr, likelihood=LogLikelihood, lookupdir=None,
         s += dm_noise_block(psd=dm_psd, prior=amp_prior, components=components,
                             gamma_val=None)
         if dm_annual:
-            s += chrom.dm_annual_signal()
+            s += dm_annual_signal()
 
         # DM exponential dip for J1713's DM event
-        dmexp = chrom.dm_exponential_dip(tmin=54500, tmax=54900)
+        dmexp = dm_exponential_dip(tmin=54500, tmax=54900)
 
     # GW BWM signal block
     s += bwm_sglpsr_block(Tmin_bwm, Tmax_bwm, amp_prior=amp_prior, name='ramp',
@@ -2611,10 +2610,10 @@ def model_fdm(psrs, noisedict=None, white_vary=False, tm_svd=False,
         s += dm_noise_block(psd=dm_psd, prior=amp_prior, components=components,
                             gamma_val=None)
         if dm_annual:
-            s += chrom.dm_annual_signal()
+            s += dm_annual_signal()
 
         # DM exponential dip for J1713's DM event
-        dmexp = chrom.dm_exponential_dip(tmin=54500, tmax=54900)
+        dmexp = dm_exponential_dip(tmin=54500, tmax=54900)
 
     if model_CRN is True:
         # common red noise block
