@@ -198,6 +198,11 @@ def model_singlepsr_noise(psr, psr_model=False,
         else:
             raise NotImplementedError("Linear timing model not implemented yet.")
 
+    # white noise vary
+    if white_noise.get("toggle"):
+        white_noise["vary"] = white_noise.get("vary", True)
+
+    # fact like overrides
     if fact_like.get("toggle") and not fact_like.get("Tspan"):
         raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                          "a factorized likelihood analysis.")
