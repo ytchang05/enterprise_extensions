@@ -198,7 +198,7 @@ def model_singlepsr_noise(psr, psr_model=False,
         else:
             raise NotImplementedError("Linear timing model not implemented yet.")
 
-    if fact_like.get("Tspan") is None:
+    if fact_like.get("toggle") and not fact_like.get("Tspan"):
         raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                          "a factorized likelihood analysis.")
     fact_like["gamma_val"] = fact_like.get("gamma_val", 13./3)
@@ -257,7 +257,7 @@ def model_singlepsr_noise(psr, psr_model=False,
         "dual_cusp": dm_dual_exp_cusp
     }
 
-    for name, block in dm_event_blocks:
+    for name, block in dm_event_blocks.items():
 
         if dm and (name in dm) and dm[name].pop("toggle", False):
 
