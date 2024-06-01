@@ -59,7 +59,7 @@ def model_singlepsr_noise(psr, psr_model=False,
     :param shared: dictionary of any noise parameters that may be shared
         between multiple noise blocks; any provided shared kwargs will be the
         default in a given noise block (if used in the block) unless
-        overridden; examples include, but aren't limited to:
+        overridden in the block's kwarg; examples include:
         - coefficients: explicitly include latent coefficients in model
         - components: number of modes in Fourier domain processes
         - gamma_val: spectral index to fix
@@ -140,6 +140,16 @@ def model_singlepsr_noise(psr, psr_model=False,
 
     # TODO: add **kwargs and convert old kwargs for backward compatibility
 
+    # default kwarg dicts to empty dicts
+    shared = shared or {}
+    tm = tm or {}
+    white_noise = white_noise or {}
+    fact_like = fact_like or {}
+    red_noise = red_noise or {}
+    dm = dm or {}
+    sw = sw or {}
+    chrom = chrom or {}
+
     # timing model
     tm_settings = {k: tm.pop(k, False) for k in ("dmjump_var", "linear", "marg")}
     if not tm.get("toggle"):
@@ -191,6 +201,7 @@ def model_singlepsr_noise(psr, psr_model=False,
     if fact_like.get("Tspan") is None:
         raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                          "a factorized likelihood analysis.")
+    fact_like["gamma_val"] = fact_like.get("gamma_val", 13./3)
 
     # default red noise toggle to true
     if "toggle" not in red_noise:
@@ -228,7 +239,7 @@ def model_singlepsr_noise(psr, psr_model=False,
     for name, block in blocks.items():
 
         # get toggle and kwargs from arguments
-        block_kwargs = locals()[name] if not name.startswith("dm.") else dm[name[3:]]
+        block_kwargs = locals()[name] if not name.startswith("dm.") else dm.get(name[3:], {})
 
         if block_kwargs.pop("toggle", False):
 
@@ -248,7 +259,7 @@ def model_singlepsr_noise(psr, psr_model=False,
 
     for name, block in dm_event_blocks:
 
-        if dm[name].pop("toggle", False):
+        if dm and (name in dm) and dm[name].pop("toggle", False):
 
             # enumerate events for naming purposes
             for n, event_kwargs in enumerate(dm[name].get("events", [{}])):
