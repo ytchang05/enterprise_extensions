@@ -43,6 +43,9 @@ def model_singlepsr_noise(psr, psr_model=False,
     only the kwargs necessary, as unprovided kwargs will use a given noise
     block's defaults. There is also maximum flexibility in providing
     higher-level kwarg defaults that can be overridden by lower-level kwargs.
+    If a block has any provided kwargs, its toggle defaults to True; empty
+    blocks' toggles default to False, with the exception of the red_noise
+    toggle always defaulting to True unless specified False.
 
     :param psr: enterprise pulsar object
     :param psr_model: Return the enterprise model instantiated on the pulsar
@@ -69,7 +72,7 @@ def model_singlepsr_noise(psr, psr_model=False,
         - psd: red noise psd model
         - Tspan: time baseline used to determine Fourier GP frequencies
     :param tm: dictionary of timing model kwargs; includes:
-        - toggle: vary the timing model parameters (default False)
+        - toggle: vary the timing model parameters
         - dmjump_var:
         - linear: vary the timing model in the linear approximation
         - marg: Use marginalized timing model. In many cases this will speed
@@ -78,19 +81,19 @@ def model_singlepsr_noise(psr, psr_model=False,
         - svd: boolean for svd-stabilised timing model design matrix
         - norm: normalize the timing model, or provide custom normalization
     :param white_noise: dictionary of white noise kwargs; includes:
-        - toggle: vary the white noise parameters (default False)
+        - toggle: vary the white noise parameters
         - wb_efac_sigma
         - ng_twg_setup
     :param fact_like: dictionary of common red noise kwargs; includes:
-        - toggle: run a factorized likelihood analyis Boolean (default False)
+        - toggle: run a factorized likelihood analyis Boolean
         - components: number of modes in Fourier domain for a common
            process in a factorized likelihood calculation.
     :param red_noise: dictionary of red noise kwargs; includes:
-        - toggle: include red noise in the model (default True)
+        - toggle: include red noise in the model (always default True)
     :param dm: dictionary of DM noise kwargs; includes:
         - vary: whether to vary the DM model or use constant values
         - gp: dictionary of gaussian process DM noise kwargs; includes:
-            - toggle: include DMGP (default False)
+            - toggle: include DMGP
             - gp_kernel: GP kernel type to use, ['diag','nondiag']
             - psd: power-spectral density of DM variations
             - nondiag_kernel: type of time-domain DM GP kernel
@@ -98,12 +101,12 @@ def model_singlepsr_noise(psr, psr_model=False,
             - df: frequency-scale for DM linear interpolation basis (MHz)
             - gamma_val: spectral index of power-law DM variations
         - dmx: dictionary of DMX noise kwargs; includes:
-            - toggle: include DMX (default False)
+            - toggle: include DMX
             - dmx_data: supply the DMX data from par files
         - annual: dictionary of annual DM noise kwargs; includes: "toggle"
         - expdip, cusp, dual_cusp: dictionary of DM event noise kwargs; each
             behaves the same, and includes:
-            - toggle: include DM event noise (default False)
+            - toggle: include DM event noise
             - name: name of event sequence
             - events: list of dictionaries of event kwargs; possible kwargs are
                 below, however any of these can also be specified at the same level
@@ -115,13 +118,13 @@ def model_singlepsr_noise(psr, psr_model=False,
                 - sym: make event symmetric (for cusp and dual_cusp)
                 - name: name of event
     :param sw: dictionary of solar wind noise kwargs; includes:
-        - toggle: use the deterministic solar wind model (default False)
+        - toggle: use the deterministic solar wind model
         - include_swgp: add a Gaussian process perturbation to the deterministic
         solar wind model (default False)
         - swgp_prior: prior is currently set automatically
         - swgp_basis: ['powerlaw', 'periodic', 'sq_exp']
     :param chrom: dictionary of chromatic noise kwargs; includes:
-        - toggle: include general chromatic noise (default False)
+        - toggle: include general chromatic noise
         - vary: whether to vary the chromatic model or use constant values
         - gp_kernel: GP kernel type to use, ['diag','nondiag']
         - psd: power-spectral density of chromatic noise
@@ -152,7 +155,7 @@ def model_singlepsr_noise(psr, psr_model=False,
 
     # timing model
     tm_settings = {k: tm.pop(k, False) for k in ("dmjump_var", "linear", "marg")}
-    if not tm.get("toggle"):
+    if not (tm and tm.pop("toggle", True)):
         if is_wideband and use_dmdata:
 
             if tm_settings["dmjump_var"]:
@@ -160,7 +163,7 @@ def model_singlepsr_noise(psr, psr_model=False,
             else:
                 dmjump = parameter.Constant()
 
-            if white_noise.get("toggle"):
+            if white_noise and white_noise.get("toggle", True):
                 if white_noise.get("ng_twg_setup"):
                     default_wb_efac_sigma = inspect.signature(white_noise_block).parameters["wb_efac_sigma"].default
                     dmefac = parameter.Normal(1.0, white_noise.get("wb_efac_sigma", default_wb_efac_sigma))
@@ -199,7 +202,7 @@ def model_singlepsr_noise(psr, psr_model=False,
             raise NotImplementedError("Linear timing model not implemented yet.")
 
     # white noise vary
-    if white_noise.get("toggle"):
+    if white_noise and white_noise.get("toggle", True):
         white_noise["vary"] = white_noise.get("vary", True)
 
     # fact like overrides
@@ -209,7 +212,7 @@ def model_singlepsr_noise(psr, psr_model=False,
     fact_like["gamma_val"] = fact_like.get("gamma_val", 13./3)
 
     # default red noise toggle to true
-    if "toggle" not in red_noise:
+    if not red_noise:
         print("Red noise toggle not specified, defaulting to True.")
         red_noise["toggle"] = True
 
@@ -246,7 +249,7 @@ def model_singlepsr_noise(psr, psr_model=False,
         # get toggle and kwargs from arguments
         block_kwargs = locals()[name] if not name.startswith("dm.") else dm.get(name[3:], {})
 
-        if block_kwargs.pop("toggle", False):
+        if block_kwargs and block_kwargs.pop("toggle", True):
 
             # use shared_kwargs where applicable unless overridden
             for key, value in shared.items():
@@ -264,7 +267,7 @@ def model_singlepsr_noise(psr, psr_model=False,
 
     for name, block in dm_event_blocks.items():
 
-        if dm and (name in dm) and dm[name].pop("toggle", False):
+        if dm and dm.get(name) and dm[name].pop("toggle", True):
 
             # enumerate events for naming purposes
             for n, event_kwargs in enumerate(dm[name].get("events", [{}])):
