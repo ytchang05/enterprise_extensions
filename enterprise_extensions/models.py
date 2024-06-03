@@ -201,15 +201,10 @@ def model_singlepsr_noise(psr, psr_model=False,
         else:
             raise NotImplementedError("Linear timing model not implemented yet.")
 
-    # white noise vary
-    if white_noise and white_noise.get("toggle", True):
-        white_noise["vary"] = white_noise.get("vary", True)
-
-    # fact like overrides
+    # fact like warning
     if fact_like.get("toggle") and not fact_like.get("Tspan"):
         raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                          "a factorized likelihood analysis.")
-    fact_like["gamma_val"] = fact_like.get("gamma_val", 13./3)
 
     # default red noise toggle to true
     if not red_noise:
@@ -225,13 +220,11 @@ def model_singlepsr_noise(psr, psr_model=False,
     if dm.get("dmx", {}).get("dmx_data"):
         dm["dmx"]["dmx_data"] = dm["dmx"]["dmx_data"][psr.name]
 
-    # override solar wind block defaults
-    sw["ACE_prior"] = sw.get("ACE_prior", True)
-    sw["include_gp"] = sw.get("include_gp", False)
-
     # adding white-noise, and acting on psr objects
     if ('NANOGrav' in psr.flags['pta'] or 'CHIME' in psr.flags['f']) and not is_wideband:
         white_noise["inc_ecorr"] = white_noise.get("inc_ecorr", True)
+    else:
+        white_noise["inc_ecorr"] = white_noise.get("inc_ecorr", False)
 
     blocks = {
         "white_noise": white_noise_block,
@@ -250,6 +243,14 @@ def model_singlepsr_noise(psr, psr_model=False,
         block_kwargs = locals()[name] if not name.startswith("dm.") else dm.get(name[3:], {})
 
         if block_kwargs and block_kwargs.pop("toggle", True):
+
+            if name == "white_noise":
+                white_noise["vary"] = white_noise.get("vary", True)
+            elif name == "fact_like":
+                fact_like["gamma_val"] = fact_like.get("gamma_val", 13. / 3)
+            elif name == "sw":
+                sw["ACE_prior"] = sw.get("ACE_prior", True)
+                sw["include_swgp"] = sw.get("include_swgp", False)
 
             # use shared_kwargs where applicable unless overridden
             for key, value in shared.items():
