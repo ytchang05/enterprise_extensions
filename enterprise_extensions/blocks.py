@@ -37,7 +37,9 @@ def channelized_backends(backend_flags):
 
 
 def white_noise_block(vary=False, inc_ecorr=False, gp_ecorr=False,
-                      efac1=False, select='backend', tnequad=False, name=None, ng_twg_setup=False, wb_efac_sigma=0.25):
+                      efac1=False, select='backend', tnequad=False, name=None,
+                      efac_min=0.01, efac_max=10, log_equad_min=-8.5, log_equad_max=-5,
+                      ng_twg_setup=False, wb_efac_sigma=0.25):
     """
     Returns the white noise block of the model:
 
@@ -77,10 +79,10 @@ def white_noise_block(vary=False, inc_ecorr=False, gp_ecorr=False,
         elif ng_twg_setup:
             efac = parameter.Normal(1.0, wb_efac_sigma)
         else:
-            efac = parameter.Uniform(0.01, 10.0)
-        equad = parameter.Uniform(-8.5, -5)
+            efac = parameter.Uniform(efac_min, efac_max)
+        equad = parameter.Uniform(log_equad_min, log_equad_max)
         if inc_ecorr:
-            ecorr = parameter.Uniform(-8.5, -5)
+            ecorr = parameter.Uniform(log_equad_min, log_equad_max)
     else:
         efac = parameter.Constant()
         equad = parameter.Constant()
@@ -333,6 +335,9 @@ def bwm_sglpsr_block(Tmin, Tmax, amp_prior='log-uniform',
 
 def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
                    prior='log-uniform', dt=15, df=200,
+                   logmin=-20, logmax=-11,
+                   logmin_sigma=-10, logmax_sigma=-4,
+                   logmin_fb=-9, logmax_fb=-7, min_kappa=0, max_kappa=7,
                    Tspan=None, components=30,
                    gamma_val=None, coefficients=False, vary=True):
     """
@@ -362,19 +367,19 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
     """
     # dm noise parameters that are common
     if gp_kernel == 'diag':
-        if psd in ['powerlaw', 'turnover', 'tprocess', 'tprocess_adapt']:
+        if psd in ['powerlaw', 'broken_powerlaw', 'turnover', 'tprocess', 'tprocess_adapt']:
             # parameters shared by PSD functions
             if not vary:
                 log10_A_dm = parameter.Constant()
             elif prior == 'uniform':
-                log10_A_dm = parameter.LinearExp(-20, -11)
+                log10_A_dm = parameter.LinearExp(logmin, logmax)
             elif prior == 'log-uniform' and gamma_val is not None:
                 if np.abs(gamma_val - 4.33) < 0.1:
-                    log10_A_dm = parameter.Uniform(-20, -11)
+                    log10_A_dm = parameter.Uniform(logmin, logmax)
                 else:
-                    log10_A_dm = parameter.Uniform(-20, -11)
+                    log10_A_dm = parameter.Uniform(logmin, logmax)
             else:
-                log10_A_dm = parameter.Uniform(-20, -11)
+                log10_A_dm = parameter.Uniform(logmin, logmax)
 
             if gamma_val is not None:
                 gamma_dm = parameter.Constant(gamma_val)
@@ -386,10 +391,17 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
             # different PSD function parameters
             if psd == 'powerlaw':
                 dm_prior = utils.powerlaw(log10_A=log10_A_dm, gamma=gamma_dm)
+            elif psd == 'broken_powerlaw':
+                kappa = parameter.Uniform(min_kappa, max_kappa)
+                log10_fb = parameter.Uniform(logmin_fb, logmax_fb)
+                dm_prior = gpp.broken_powerlaw(log10_A=log10_A_dm,
+                                               gamma=gamma_dm,
+                                               delta=0, log10_fb=log10_fb,
+                                               kappa=kappa)
             elif psd == 'turnover':
                 if vary:
-                    kappa_dm = parameter.Uniform(0, 7)
-                    lf0_dm = parameter.Uniform(-9, -7)
+                    kappa_dm = parameter.Uniform(min_kappa, max_kappa)
+                    lf0_dm = parameter.Uniform(logmin_fb, logmax_fb)
                 else:
                     kappa_dm = parameter.Constant()
                     lf0_dm = parameter.Constant()
@@ -434,7 +446,7 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
         if nondiag_kernel == 'periodic':
             # Periodic GP kernel for DM
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
                 log10_p = parameter.Uniform(-2, 3)
                 log10_gam_p = parameter.Uniform(-4, 4)
@@ -452,7 +464,7 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
         elif nondiag_kernel == 'periodic_rfband':
             # Periodic GP kernel for DM with RQ radio-frequency dependence
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
                 log10_ell2 = parameter.Uniform(0, 7)
                 log10_alpha_wgt = parameter.Uniform(-4, 3)
@@ -476,7 +488,7 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
         elif nondiag_kernel == 'sq_exp':
             # squared-exponential GP kernel for DM
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
             else:
                 log10_sigma = parameter.Constant()
@@ -488,7 +500,7 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
         elif nondiag_kernel == 'sq_exp_rfband':
             # Sq-Exp GP kernel for DM with RQ radio-frequency dependence
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
                 log10_ell2 = parameter.Uniform(0, 7)
                 log10_alpha_wgt = parameter.Uniform(-4, 3)
@@ -507,7 +519,7 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
         elif nondiag_kernel == 'dmx_like':
             # DMX-like signal
             if vary:
-                log10_sigma_ridge = parameter.Uniform(-10, -4)
+                log10_sigma_ridge = parameter.Uniform(logmin_sigma, logmax_sigma)
             else:
                 log10_sigma_ridge = parameter.Constant()
 
@@ -523,6 +535,9 @@ def dm_noise_block(gp_kernel='diag', psd='powerlaw', nondiag_kernel='periodic',
 def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
                           nondiag_kernel='periodic',
                           prior='log-uniform', dt=15, df=200,
+                          logmin=-20, logmax=-11,
+                          gmin=0, gmax=7,
+                          logmin_sigma=-10, logmax_sigma=-4,
                           idx=4, include_quadratic=False,
                           Tspan=None, name='chrom', components=30,
                           coefficients=False, vary=True):
@@ -577,11 +592,11 @@ def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
             if not vary:
                 log10_A = parameter.Constant()
             elif prior == 'uniform':
-                log10_A = parameter.LinearExp(-18, -11)
+                log10_A = parameter.LinearExp(logmin, logmax)
             elif prior == 'log-uniform':
-                log10_A = parameter.Uniform(-18, -11)
+                log10_A = parameter.Uniform(logmin, logmax)
             if vary:
-                gamma = parameter.Uniform(0, 7)
+                gamma = parameter.Uniform(gmin, gmax)
             else:
                 gamma = parameter.Constant()
 
@@ -611,7 +626,7 @@ def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
         if nondiag_kernel == 'periodic':
             # Periodic GP kernel for DM
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
                 log10_p = parameter.Uniform(-2, 3)
                 log10_gam_p = parameter.Uniform(-4, 4)
@@ -631,7 +646,7 @@ def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
         elif nondiag_kernel == 'sq_exp':
             # squared-exponential kernel for DM
             if vary:
-                log10_sigma = parameter.Uniform(-10, -4)
+                log10_sigma = parameter.Uniform(logmin_sigma, logmax_sigma)
                 log10_ell = parameter.Uniform(0, 5)
             else:
                 log10_sigma = parameter.Constant()
@@ -644,7 +659,7 @@ def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
         elif nondiag_kernel == 'dmx_like':
             # DMX-like signal
             if vary:
-                log10_sigma_ridge = parameter.Uniform(-10, -4)
+                log10_sigma_ridge = parameter.Uniform(logmin_sigma, logmax_sigma)
             else:
                 log10_sigma_ridge = parameter.Constant()
 
