@@ -578,11 +578,12 @@ def chromatic_noise_block(gp_kernel='nondiag', psd='powerlaw',
         Whether to vary the parameters or use constant values.
 
     """
-    if idx == 'vary':
-        if not vary:
-            idx = parameter.Constant()
-        else:
-            idx = parameter.Uniform(2.5, 5)
+    if idx == 'vary' and not vary:
+        idx = parameter.Constant()
+    elif idx == 'vary' and vary:
+        idx = parameter.Uniform(2.5, 5)
+    else:
+        idx = parameter.Constant(idx)
 
     if gp_kernel == 'diag':
         chm_basis = gpb.createfourierdesignmatrix_chromatic(nmodes=components,
