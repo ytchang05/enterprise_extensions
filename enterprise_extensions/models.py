@@ -43,9 +43,9 @@ def model_singlepsr_noise(psr, psr_model=False,
     only the kwargs necessary, as unprovided kwargs will use a given noise
     block's defaults. There is also maximum flexibility in providing
     higher-level kwarg defaults that can be overridden by lower-level kwargs.
-    If a block has any provided kwargs, its toggle defaults to True; empty
-    blocks' toggles default to False, with the exception of the red_noise
-    toggle always defaulting to True unless specified False.
+    The red_noise toggle always defaults to True; else, if a block's kwarg dict
+    is provided (even if empty), its toggle defaults to True; unprovided
+    blocks' kwargs' toggles default to False.
 
     :param psr: enterprise pulsar object
     :param psr_model: Return the enterprise model instantiated on the pulsar
@@ -144,18 +144,43 @@ def model_singlepsr_noise(psr, psr_model=False,
     # TODO: add **kwargs and convert old kwargs for backward compatibility
 
     # default kwarg dicts to empty dicts
-    shared = shared or {}
-    tm = tm or {}
-    white_noise = white_noise or {}
-    fact_like = fact_like or {}
-    red_noise = red_noise or {}
-    dm = dm or {}
-    sw = sw or {}
-    chrom = chrom or {}
+    all_kwargs = {
+        "shared": shared,
+        "tm": tm,
+        "white_noise": white_noise,
+        "fact_like": fact_like,
+        "red_noise": red_noise,
+        "dm.gp": dm.get("gp"),
+        "dm.dmx": dm.get("dmx"),
+        "dm.annual": dm.get("annual"),
+        "dm.expdip": dm.get("expdip"),
+        "dm.cusp": dm.get("cusp"),
+        "dm.dual_cusp": dm.get("dual_cusp"),
+        "sw": sw,
+        "chrom": chrom,
+    }
+
+    for kwa in all_kwargs:
+        if not all_kwargs[kwa]:
+
+            # all provided empty dicts -> toggle True
+            if isinstance(all_kwargs[kwa], dict):
+                all_kwargs[kwa] = {"toggle": True}
+
+            # all None (not provided at all) -> toggle False
+            elif all_kwargs[kwa] is None:
+                if kwa == "red_noise":
+                    all_kwargs[kwa] = {"toggle": True}
+                    print("Red noise toggle not specified, defaulting to True.")
+                else:
+                    all_kwargs[kwa] = {"toggle": False}
+
+            else:
+                raise ValueError(f"Invalid kwarg dict {kwa}.")
 
     # timing model
-    tm_settings = {k: tm.pop(k, False) for k in ("dmjump_var", "linear", "marg")}
-    if not (tm and tm.pop("toggle", True)):
+    tm_settings = {k: all_kwargs["tm"].pop(k, False) for k in ("dmjump_var", "linear", "marg")}
+    if not (all_kwargs["tm"] and all_kwargs["tm"].pop("toggle", True)):
         if is_wideband and use_dmdata:
 
             if tm_settings["dmjump_var"]:
@@ -163,10 +188,10 @@ def model_singlepsr_noise(psr, psr_model=False,
             else:
                 dmjump = parameter.Constant()
 
-            if white_noise and white_noise.get("toggle", True):
-                if white_noise.get("ng_twg_setup"):
+            if all_kwargs["white_noise"]["toggle"]:
+                if all_kwargs["white_noise"].get("ng_twg_setup"):
                     default_wb_efac_sigma = inspect.signature(white_noise_block).parameters["wb_efac_sigma"].default
-                    dmefac = parameter.Normal(1.0, white_noise.get("wb_efac_sigma", default_wb_efac_sigma))
+                    dmefac = parameter.Normal(1.0, all_kwargs["white_noise"].get("wb_efac_sigma", default_wb_efac_sigma))
                 else:
                     dmefac = parameter.Uniform(pmin=0.1, pmax=10.0)
                 log10_dmequad = parameter.Uniform(pmin=-7.0, pmax=0.0)
@@ -184,11 +209,11 @@ def model_singlepsr_noise(psr, psr_model=False,
 
         else:
             if tm_settings["marg"]:
-                s = gp_signals.MarginalizingTimingModel(**tm)
+                s = gp_signals.MarginalizingTimingModel(**all_kwargs["tm"])
             else:
                 default_coefficients = inspect.signature(gp_signals.TimingModel).parameters["coefficients"].default
-                tm["coefficients"] = shared.get("coefficients", default_coefficients)
-                s = gp_signals.TimingModel(**tm)
+                all_kwargs["tm"]["coefficients"] = all_kwargs["tm"].get("coefficients", default_coefficients)
+                s = gp_signals.TimingModel(**all_kwargs["tm"])
 
     else:
         # create new attribute for enterprise pulsar object
@@ -197,34 +222,14 @@ def model_singlepsr_noise(psr, psr_model=False,
             psr.tmparams_orig[key] = (psr.t2pulsar[key].val,
                                       psr.t2pulsar[key].err)
         if not tm_settings["linear"]:
-            s = timing_block(**tm)
+            s = timing_block(**all_kwargs["tm"])
         else:
             raise NotImplementedError("Linear timing model not implemented yet.")
 
-    # fact like warning
-    if fact_like.get("toggle") and not fact_like.get("Tspan"):
-        raise ValueError("Must Timespan to match amongst all pulsars when doing " +
-                         "a factorized likelihood analysis.")
-
-    # default red noise toggle to true
-    if not red_noise:
-        print("Red noise toggle not specified, defaulting to True.")
-        red_noise["toggle"] = True
-
     # use dm_vary for all dm blocks unless overridden
     if "vary" in dm:
-        for key in [k for k in dm if k != "vary"]:
-            dm[key]["vary"] = dm[key].get("vary", dm["vary"])
-
-    # set dmx data for specific pulsar
-    if dm.get("dmx", {}).get("dmx_data"):
-        dm["dmx"]["dmx_data"] = dm["dmx"]["dmx_data"][psr.name]
-
-    # adding white-noise, and acting on psr objects
-    if ('NANOGrav' in psr.flags['pta'] or 'CHIME' in psr.flags['f']) and not is_wideband:
-        white_noise["inc_ecorr"] = white_noise.get("inc_ecorr", True)
-    else:
-        white_noise["inc_ecorr"] = white_noise.get("inc_ecorr", False)
+        for key in [k for k in all_kwargs if k.startswith("dm.")]:
+            all_kwargs[key]["vary"] = all_kwargs[key].get("vary", dm["vary"])
 
     blocks = {
         "white_noise": white_noise_block,
@@ -233,64 +238,69 @@ def model_singlepsr_noise(psr, psr_model=False,
         "dm.gp": dm_noise_block,
         "dm.dmx": dmx_signal,
         "dm.annual": dm_annual_signal,
+        "dm.expdip": dm_exponential_dip,
+        "dm.cusp": dm_exponential_cusp,
+        "dm.dual_cusp": dm_dual_exp_cusp,
         "sw": solar_wind_block,
         "chrom": chromatic_noise_block,
     }
 
     for name, block in blocks.items():
+        if all_kwargs[name].pop("toggle"):
 
-        # get toggle and kwargs from arguments
-        block_kwargs = locals()[name] if not name.startswith("dm.") else dm.get(name[3:], {})
-
-        if block_kwargs and block_kwargs.pop("toggle", True):
-
+            # white noise overrides
             if name == "white_noise":
-                white_noise["vary"] = white_noise.get("vary", True)
+                all_kwargs[name]["vary"] = all_kwargs[name].get("vary", True)
+                if ('NANOGrav' in psr.flags['pta'] or 'CHIME' in psr.flags['f']) and not is_wideband:
+                    all_kwargs[name]["inc_ecorr"] = all_kwargs[name].get("inc_ecorr", True)
+
+            # common red noise overrides
             elif name == "fact_like":
-                fact_like["gamma_val"] = fact_like.get("gamma_val", 13. / 3)
+                all_kwargs[name]["gamma_val"] = all_kwargs[name].get("gamma_val", 13. / 3)
+                if not not all_kwargs[name].get("Tspan"):
+                    raise ValueError("Must Timespan to match amongst all pulsars when doing " +
+                                     "a factorized likelihood analysis.")
+
+            # get dmx data of individual pulsar
+            elif name == "dm.dmx":
+                if all_kwargs[name].get("dmx_data"):
+                    all_kwargs[name]["dmx_data"] = all_kwargs[name]["dmx_data"][psr.name]
+
+            # solar wind noise overrides
             elif name == "sw":
-                sw["ACE_prior"] = sw.get("ACE_prior", True)
-                sw["include_swgp"] = sw.get("include_swgp", False)
+                all_kwargs[name]["ACE_prior"] = all_kwargs[name].get("ACE_prior", True)
+                all_kwargs[name]["include_swgp"] = all_kwargs[name].get("include_swgp", False)
 
             # use shared_kwargs where applicable unless overridden
-            for key, value in shared.items():
+            for key, value in all_kwargs["shared"].items():
                 if inspect.signature(block).parameters.get(key):
-                    block_kwargs[key] = block_kwargs.get(key, value)
+                    all_kwargs[name][key] = all_kwargs[name].get(key, value)
 
-            # add noise block
-            s += block(**block_kwargs)
+            # dm event blocks
+            if name in ("dm.expdip", "dm.cusp", "dm.dual_cusp"):
+                # enumerate events for naming purposes
+                for n, event_kwargs in enumerate(all_kwargs[name].get("events", [{}])):
 
-    dm_event_blocks = {
-        "expdip": dm_exponential_dip,
-        "cusp": dm_exponential_cusp,
-        "dual_cusp": dm_dual_exp_cusp
-    }
+                    # use shared kwargs where applicable unless overridden
+                    for k, v in all_kwargs[name].items():
+                        if k in ("events", "name"):
+                            continue
+                        event_kwargs[k] = event_kwargs.get(k, v)
 
-    for name, block in dm_event_blocks.items():
+                    # use default tmin and tmax unless overridden
+                    event_kwargs["tmin"] = event_kwargs.get("tmin", psr.toas.min() / const.day)
+                    event_kwargs["tmax"] = event_kwargs.get("tmax", psr.toas.max() / const.day)
 
-        if dm and dm.get(name) and dm[name].pop("toggle", True):
+                    # format event name
+                    event_kwargs["name"] = '_'.join(filter(bool, ["dm", name, all_kwargs[name].get("name"),
+                                                                  (event_kwargs.get("name") or str(n + 1))]))
 
-            # enumerate events for naming purposes
-            for n, event_kwargs in enumerate(dm[name].get("events", [{}])):
+                    # add event block
+                    s += block(**event_kwargs)
 
-                # use shared kwargs where applicable unless overridden
-                for k, v in dm[name].items():
-                    if k in ("events", "name"):
-                        continue
-                    event_kwargs[k] = event_kwargs.get(k, v)
-
-                # use default tmin and tmax unless overridden
-                event_kwargs["tmin"] = event_kwargs.get("tmin", psr.toas.min() / const.day)
-                event_kwargs["tmax"] = event_kwargs.get("tmax", psr.toas.max() / const.day)
-
-                # format event name
-                event_kwargs["name"] = '_'.join([x for x in
-                                                 ["dm", name, dm[name].get('name'),
-                                                  (event_kwargs.get("name") or str(n+1))]
-                                                 if x])
-
-                # add noise block
-                s += block(**event_kwargs)
+            # all other blocks
+            else:
+                s += block(**all_kwargs[name])
 
     # extra signals
     if extra_sigs is not None:
