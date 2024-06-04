@@ -144,6 +144,7 @@ def model_singlepsr_noise(psr, psr_model=False,
     # TODO: add **kwargs and convert old kwargs for backward compatibility
 
     # default kwarg dicts to empty dicts
+    dm = dm or {}
     all_kwargs = {
         "shared": shared,
         "tm": tm,
@@ -292,7 +293,7 @@ def model_singlepsr_noise(psr, psr_model=False,
                     event_kwargs["tmax"] = event_kwargs.get("tmax", psr.toas.max() / const.day)
 
                     # format event name
-                    event_kwargs["name"] = '_'.join(filter(bool, ["dm", name, all_kwargs[name].get("name"),
+                    event_kwargs["name"] = '_'.join(filter(bool, ["dm", name[3:], all_kwargs[name].get("name"),
                                                                   (event_kwargs.get("name") or str(n + 1))]))
 
                     # add event block

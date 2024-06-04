@@ -169,7 +169,8 @@ def createfourierdesignmatrix_solar_dm(toas, freqs, planetssb, sunssb, pos_t,
 
 
 def solar_wind_block(n_earth=None, ACE_prior=False, include_swgp=True,
-                     swgp_prior=None, swgp_basis=None, Tspan=None):
+                     swgp_prior=None, swgp_basis=None, Tspan=None,
+                     name='n_earth'):
     """
     Returns Solar Wind DM noise model. Best model from Hazboun, et al (in prep)
         Contains a single mean electron density with an auxiliary perturbation
@@ -202,7 +203,7 @@ def solar_wind_block(n_earth=None, ACE_prior=False, include_swgp=True,
         pass
 
     deter_sw = solar_wind(n_earth=n_earth)
-    mean_sw = deterministic_signals.Deterministic(deter_sw, name='n_earth')
+    mean_sw = deterministic_signals.Deterministic(deter_sw, name=name)
     sw_model = mean_sw
 
     if include_swgp:
