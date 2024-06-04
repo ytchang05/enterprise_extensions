@@ -72,11 +72,11 @@ def model_singlepsr_noise(psr, psr_model=False,
         - psd: red noise psd model
         - Tspan: time baseline used to determine Fourier GP frequencies
     :param tm: dictionary of timing model kwargs; includes:
-        - toggle: vary the timing model parameters
-        - dmjump_var:
-        - linear: vary the timing model in the linear approximation
+        - vary: vary the timing model parameters (default False)
+        - dmjump_var (default False)
+        - linear: vary timing model in the linear approximation (default False)
         - marg: Use marginalized timing model. In many cases this will speed
-        up the likelihood calculation significantly.
+        up the likelihood calculation significantly. (default False)
         - param_list: an explicit list of timing model parameters to vary
         - svd: boolean for svd-stabilised timing model design matrix
         - norm: normalize the timing model, or provide custom normalization
@@ -144,10 +144,10 @@ def model_singlepsr_noise(psr, psr_model=False,
     # TODO: add **kwargs and convert old kwargs for backward compatibility
 
     # default kwarg dicts to empty dicts
+    tm = tm or {}
     dm = dm or {}
     all_kwargs = {
         "shared": shared,
-        "tm": tm,
         "white_noise": white_noise,
         "fact_like": fact_like,
         "red_noise": red_noise,
@@ -176,12 +176,12 @@ def model_singlepsr_noise(psr, psr_model=False,
                 else:
                     all_kwargs[kwa] = {"toggle": False}
 
-            else:
-                raise ValueError(f"Invalid kwarg dict {kwa}.")
+        elif not isinstance(all_kwargs[kwa], dict):
+            raise ValueError(f"Invalid kwarg dict {kwa}.")
 
     # timing model
-    tm_settings = {k: all_kwargs["tm"].pop(k, False) for k in ("dmjump_var", "linear", "marg")}
-    if not (all_kwargs["tm"] and all_kwargs["tm"].pop("toggle", True)):
+    tm_settings = {k: tm.pop(k, False) for k in ("dmjump_var", "linear", "marg")}
+    if not tm.pop("vary", False):
         if is_wideband and use_dmdata:
 
             if tm_settings["dmjump_var"]:
@@ -210,11 +210,11 @@ def model_singlepsr_noise(psr, psr_model=False,
 
         else:
             if tm_settings["marg"]:
-                s = gp_signals.MarginalizingTimingModel(**all_kwargs["tm"])
+                s = gp_signals.MarginalizingTimingModel(**tm)
             else:
                 default_coefficients = inspect.signature(gp_signals.TimingModel).parameters["coefficients"].default
-                all_kwargs["tm"]["coefficients"] = all_kwargs["tm"].get("coefficients", default_coefficients)
-                s = gp_signals.TimingModel(**all_kwargs["tm"])
+                tm["coefficients"] = tm.get("coefficients", default_coefficients)
+                s = gp_signals.TimingModel(**tm)
 
     else:
         # create new attribute for enterprise pulsar object
@@ -223,14 +223,9 @@ def model_singlepsr_noise(psr, psr_model=False,
             psr.tmparams_orig[key] = (psr.t2pulsar[key].val,
                                       psr.t2pulsar[key].err)
         if not tm_settings["linear"]:
-            s = timing_block(**all_kwargs["tm"])
+            s = timing_block(**tm)
         else:
             raise NotImplementedError("Linear timing model not implemented yet.")
-
-    # use dm_vary for all dm blocks unless overridden
-    if "vary" in dm:
-        for key in [k for k in all_kwargs if k.startswith("dm.")]:
-            all_kwargs[key]["vary"] = all_kwargs[key].get("vary", dm["vary"])
 
     blocks = {
         "white_noise": white_noise_block,
@@ -258,7 +253,7 @@ def model_singlepsr_noise(psr, psr_model=False,
             # common red noise overrides
             elif name == "fact_like":
                 all_kwargs[name]["gamma_val"] = all_kwargs[name].get("gamma_val", 13. / 3)
-                if not not all_kwargs[name].get("Tspan"):
+                if not all_kwargs[name].get("Tspan"):
                     raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                                      "a factorized likelihood analysis.")
 
@@ -271,6 +266,10 @@ def model_singlepsr_noise(psr, psr_model=False,
             elif name == "sw":
                 all_kwargs[name]["ACE_prior"] = all_kwargs[name].get("ACE_prior", True)
                 all_kwargs[name]["include_swgp"] = all_kwargs[name].get("include_swgp", False)
+
+            # use dm_vary for all dm blocks unless overridden
+            if name.startswith("dm.") and "vary" in dm:
+                all_kwargs[name]["vary"] = all_kwargs[name].get("vary", dm["vary"])
 
             # use shared_kwargs where applicable unless overridden
             for key, value in all_kwargs["shared"].items():
