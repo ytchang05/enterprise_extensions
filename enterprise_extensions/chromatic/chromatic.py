@@ -205,7 +205,7 @@ def dmx_delay(toas, freqs, dmx_ids, **kwargs):
 
 
 def dm_exponential_dip(tmin, tmax, idx=2, idx_min=0, idx_max=6,
-                       tau_min=0, tau_max=2.5, A_min=-10, A_max=-2,
+                       logmin_tau=0, logmax_tau=2.5, logmin=-10, logmax=-2,
                        sign='negative', name='dmexp', vary=True):
     """
     Returns chromatic exponential dip (i.e. TOA advance):
@@ -225,8 +225,8 @@ def dm_exponential_dip(tmin, tmax, idx=2, idx_min=0, idx_max=6,
     """
     if vary:
         t0_dmexp = parameter.Uniform(tmin, tmax)
-        log10_Amp_dmexp = parameter.Uniform(A_min, A_max)
-        log10_tau_dmexp = parameter.Uniform(tau_min, tau_max)
+        log10_Amp_dmexp = parameter.Uniform(logmin, logmax)
+        log10_tau_dmexp = parameter.Uniform(logmin_tau, logmax_tau)
     else:
         t0_dmexp = parameter.Constant()
         log10_Amp_dmexp = parameter.Constant()

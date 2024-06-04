@@ -38,7 +38,7 @@ def channelized_backends(backend_flags):
 
 def white_noise_block(vary=False, inc_ecorr=False, gp_ecorr=False,
                       efac1=False, select='backend', tnequad=False, name=None,
-                      efac_min=0.01, efac_max=10, log_equad_min=-8.5, log_equad_max=-5,
+                      efac_min=0.01, efac_max=10, logmin_equad=-8.5, logmax_equad=-5,
                       ng_twg_setup=False, wb_efac_sigma=0.25):
     """
     Returns the white noise block of the model:
@@ -80,9 +80,9 @@ def white_noise_block(vary=False, inc_ecorr=False, gp_ecorr=False,
             efac = parameter.Normal(1.0, wb_efac_sigma)
         else:
             efac = parameter.Uniform(efac_min, efac_max)
-        equad = parameter.Uniform(log_equad_min, log_equad_max)
+        equad = parameter.Uniform(logmin_equad, logmax_equad)
         if inc_ecorr:
-            ecorr = parameter.Uniform(log_equad_min, log_equad_max)
+            ecorr = parameter.Uniform(logmin_equad, logmax_equad)
     else:
         efac = parameter.Constant()
         equad = parameter.Constant()
