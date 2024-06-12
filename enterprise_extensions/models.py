@@ -144,8 +144,8 @@ def model_singlepsr_noise(psr, psr_model=False,
     # TODO: add **kwargs and convert old kwargs for backward compatibility
 
     # default kwarg dicts to empty dicts
-    tm = tm or {}
-    dm = dm or {}
+    tm = (tm or {}).copy()
+    dm = (dm or {}).copy()
     all_kwargs = {
         "shared": shared,
         "white_noise": white_noise,
@@ -175,6 +175,12 @@ def model_singlepsr_noise(psr, psr_model=False,
                     print("Red noise toggle not specified, defaulting to True.")
                 else:
                     all_kwargs[kwa] = {"toggle": False}
+
+        # if other kwargs provided, add toggle if not present
+        elif isinstance(all_kwargs[kwa], dict):
+            all_kwargs[kwa] = all_kwargs[kwa].copy()
+            if "toggle" not in all_kwargs[kwa]:
+                all_kwargs[kwa]["toggle"] = True
 
         elif not isinstance(all_kwargs[kwa], dict):
             raise ValueError(f"Invalid kwarg dict {kwa}.")
