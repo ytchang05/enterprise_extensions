@@ -807,7 +807,7 @@ class JumpProposal(object):
         # draw parameter from signal model
         parnames = [par.name for par in self.params]
         pname = [pnm for pnm in parnames
-                 if ('gw' in pnm and 'rho' in pnm)][0]
+                 if ('log10_rho' in pnm)][0]
 
         idx = parnames.index(pname)
         param = self.params[idx]
