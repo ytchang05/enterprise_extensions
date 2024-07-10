@@ -241,7 +241,10 @@ def dm_exponential_dip(tmin, tmax, idx=2, idx_min=0, idx_max=6,
     else:
         sign_param = -1.0
     if idx == 'vary':
-        idx = parameter.Uniform(idx_min, idx_max)
+        if vary:
+            idx = parameter.Uniform(idx_min, idx_max)
+        else:
+            idx = parameter.Constant()
     wf = chrom_exp_decay(log10_Amp=log10_Amp_dmexp,
                          t0=t0_dmexp, log10_tau=log10_tau_dmexp,
                          sign_param=sign_param, idx=idx)
