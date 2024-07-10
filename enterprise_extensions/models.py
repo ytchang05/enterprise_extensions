@@ -259,7 +259,7 @@ def model_singlepsr_noise(psr, psr_model=False,
             # common red noise overrides
             elif name == "fact_like":
                 all_kwargs[name]["gamma_val"] = all_kwargs[name].get("gamma_val", 13. / 3)
-                if not all_kwargs[name].get("Tspan"):
+                if not all_kwargs[name].get("Tspan") and not all_kwargs["shared"].get("Tspan"):
                     raise ValueError("Must Timespan to match amongst all pulsars when doing " +
                                      "a factorized likelihood analysis.")
 
