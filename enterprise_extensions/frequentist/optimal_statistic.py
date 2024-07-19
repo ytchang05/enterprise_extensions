@@ -374,7 +374,7 @@ class OptimalStatistic(object):
         for sc in self.pta._signalcollections:
             ind = []
             for signal, idx in sc._idx.items():
-                if 'red noise' in signal.signal_name and signal.signal_id in ['gw', 'gw_crn']:
+                if 'red noise' in signal.signal_name and signal.signal_id in ['gw', 'gw_crn', 'gwb', 'crn']:
                     ind.append(idx)
             ix = np.unique(np.concatenate(ind))
             Fmats.append(sc.get_basis(params=params)[:, ix])
@@ -385,7 +385,7 @@ class OptimalStatistic(object):
         """Hackish way to get frequency vector."""
 
         for sig in self.pta._signalcollections[0]._signals:
-            if 'red noise' in sig.signal_name and sig.signal_id in ['gw', 'gw_crn']:
+            if 'red noise' in sig.signal_name and sig.signal_id in ['gw', 'gw_crn', 'gwb', 'crn']:
                 # make sure the basis is created
                 _ = sig.get_basis()
 
